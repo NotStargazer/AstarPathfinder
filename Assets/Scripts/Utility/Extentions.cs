@@ -1,5 +1,7 @@
 ﻿using System;
 
+
+//This is not my code I was just trying to make sure I understood it.
 public static class Extensions
 {
     /// <summary>

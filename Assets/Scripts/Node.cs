@@ -1,14 +1,13 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.Assertions;
 
 public class Node : MonoBehaviour
 {
     private SpriteRenderer renderer;
     public int weight;
+    public bool path;
 
-    private void Awake()
+    private void Start()
     {
         renderer = GetComponent<SpriteRenderer>();
         Assert.IsNotNull(renderer, "Missing SpriteRender component");
@@ -18,9 +17,7 @@ public class Node : MonoBehaviour
     public enum Type
     {
         blockage,
-        water,
         path,
-        bridge,
         start,
         end
     }
@@ -29,7 +26,6 @@ public class Node : MonoBehaviour
 
     private void OnMouseOver()
     {
-        Debug.Log("Mouse is over object");
         if (Input.GetKeyDown(KeyCode.Mouse0))
         {
             nodeType = nodeType.Next();
@@ -54,22 +50,15 @@ public class Node : MonoBehaviour
                 renderer.color = Color.black;
                 weight = 100;
                 break;
-            case Type.water:
-                renderer.color = Color.blue;
-                weight = 3;
-                break;
-            case Type.bridge:
-                renderer.color = new Color32(152, 118, 84, 255);
-                weight = 2;
-                break;
             case Type.start:
                 renderer.color = Color.green;
-                weight = 1;
+                weight = 100;
                 break;
             case Type.end:
                 renderer.color = Color.red;
                 weight = 0;
                 break;
         }
+        transform.parent.GetComponent<PathGrid>().UpdateFlags();
     }
 }
