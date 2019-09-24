@@ -1,13 +1,15 @@
-﻿using System;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Assertions;
 
+[RequireComponent(typeof(LineRenderer))]
 public class PathGrid : MonoBehaviour
 {
     public int width;
     public int height;
 
+    LineRenderer line;
     [SerializeField] Node nodePrefab;
     bool hasStart = false;
     bool hasEnd = false;
@@ -17,6 +19,7 @@ public class PathGrid : MonoBehaviour
     private void Awake()
     {
         grid = new Node[width, height];
+        line = GetComponent<LineRenderer>();
         Assert.IsNotNull(nodePrefab, "Missing Node prefab");
         DrawGrid();
     }
@@ -31,6 +34,8 @@ public class PathGrid : MonoBehaviour
             {
                 var go = Instantiate(nodePrefab, transform);
                 go.transform.localPosition = new Vector3(x, y);
+                go.xPos = x;
+                go.yPos = y;
                 grid[x, y] = go;
             }
         }
@@ -58,36 +63,133 @@ public class PathGrid : MonoBehaviour
         UIController.instance.UpdateText(hasEnd, hasStart);
     }
 
-    public void DrawPath()
+    public void PressButton()
     {
-        if (!hasEnd || !hasStart)
-        {
-            return;
-        }
+        StopAllCoroutines();
+        StartCoroutine(DrawPath());
+    }
 
-        foreach (var item in grid)
+    IEnumerator DrawPath()
+    {
+        line.positionCount = 0;
+        if (hasEnd || hasStart)
         {
-            item.path = false;
-        }
+            var path = GetPathPoints(FindEnd(), FindStart());
 
-        var path = GetPathPoints();
-
-        if (path == null)
-        {
-            UIController.instance.ImpossiblePath(true);
+            if (path == null)
+            {
+                UIController.instance.ImpossiblePath(true);
+            }
+            else
+            {
+                UIController.instance.ImpossiblePath(false);
+                for (int i = 0; i < path.Length; i++)
+                {
+                    line.positionCount++;
+                    line.SetPosition(i, path[i]);
+                    yield return new WaitForSeconds(0.25f);
+                }
+            }
         }
         else
         {
-            UIController.instance.ImpossiblePath(false);
-            GetComponent<LineRenderer>().positionCount = path.Length;
-            GetComponent<LineRenderer>().SetPositions(path);
+            line.positionCount = 0;
         }
     }
 
-    private Vector3[] GetPathPoints()
+    private Vector3[] GetPathPoints(Vector2Int endPoint, Vector2Int startPoint)
     {
-        Vector2Int currentPoint = FindStart();
-        Vector2Int endPoint = FindEnd();
+
+        Node startNode = grid[startPoint.x, startPoint.y];
+        Node endNode = grid[endPoint.x, endPoint.y];
+
+        List<Node> openSet = new List<Node>();
+        HashSet<Node> closedSet = new HashSet<Node>();
+
+        openSet.Add(startNode);
+
+        while (openSet.Count > 0)
+        {
+            Node currentNode = openSet[0];
+
+            for (int i = 1; i < openSet.Count; i++)
+            {
+                if (openSet[i].fCost <= currentNode.fCost)
+                {
+                    if (openSet[i].hCost < currentNode.hCost)
+                        currentNode = openSet[i];
+                }
+            }
+
+            openSet.Remove(currentNode);
+            closedSet.Add(currentNode);
+
+            if (currentNode == endNode)
+            {
+                return TracePath(startNode, endNode);
+            }
+
+            foreach (Node neighbor in GetNeighbors(currentNode))
+            {
+                if (neighbor.nodeType == Node.Type.blockage || closedSet.Contains(neighbor))
+                {
+                    continue;
+                }
+
+                int movementCost = currentNode.gCost + GetDistance(currentNode, neighbor);
+                if (movementCost < currentNode.gCost || !openSet.Contains(neighbor))
+                {
+                    neighbor.gCost = movementCost;
+                    neighbor.hCost = GetDistance(neighbor, endNode);
+                    neighbor.parent = currentNode;
+
+                    if (!openSet.Contains(neighbor))
+                    {
+                        openSet.Add(neighbor);
+                    }
+                }
+            }
+        }
+        return TracePath(startNode, endNode);
+    }
+
+    Vector3[] TracePath(Node startNode, Node endNode)
+    {
+        List<Vector3> path = new List<Vector3>();
+        Node currentNode = endNode;
+
+        while (currentNode != startNode)
+        {
+            if (currentNode.nodeType == Node.Type.blockage || !currentNode.parent)
+            {
+                return null;
+            }
+            path.Add(currentNode.transform.position + Vector3.one / 2);
+            currentNode = currentNode.parent;
+        }
+
+        path.Add(startNode.transform.position + Vector3.one / 2);
+
+        path.Reverse();
+
+        return path.ToArray();
+    }
+
+    int GetDistance(Node startNode, Node targetNode)
+    {
+        int disX = Mathf.Abs(startNode.pos.x - targetNode.pos.x);
+        int disY = Mathf.Abs(startNode.pos.y - targetNode.pos.y);
+
+        if (disX > disY)
+        {
+            return 14 * disY + 10 * (disX - disY);
+        }
+        return 14 * disX + 10 * (disY - disX);
+    }
+
+    List<Node> GetNeighbors(Node targetNode)
+    {
+        List<Node> neighbors = new List<Node>();
         Vector2Int[] moveDirections = {
             new Vector2Int(-1, -1),
             new Vector2Int(-1, 0),
@@ -98,72 +200,18 @@ public class PathGrid : MonoBehaviour
             new Vector2Int(1, 0),
             new Vector2Int(1, 1),
         };
-        List<Vector3> points = new List<Vector3>();
-        float pathLength = 0;
 
-        points.Add(grid[currentPoint.x, currentPoint.y].transform.position + new Vector3(0.5f, 0.5f));
-
-        while (true)
+        foreach (var item in moveDirections)
         {
-            List<Node> pointsInArea = new List<Node>();
-            foreach (var item in moveDirections)
+            int x = targetNode.pos.x + item.x;
+            int y = targetNode.pos.y + item.y;
+            if (x >= 0 && x < width && y >= 0 && y < height)
             {
-                try
-                {
-                    if (!grid[currentPoint.x + item.x, currentPoint.y + item.y].path && grid[currentPoint.x + item.x, currentPoint.y + item.y].nodeType != Node.Type.blockage)
-                    {
-                        pointsInArea.Add(grid[currentPoint.x + item.x, currentPoint.y + item.y]);
-                    }
-                }
-                catch (Exception)
-                {
-                }
-            }
-
-            if (pointsInArea.Count == 0)
-            {
-                if (grid[currentPoint.x, currentPoint.y].nodeType == Node.Type.start)
-                {
-                    return null;
-                }
-                grid[currentPoint.x, currentPoint.y].path = true;
-                points.RemoveAt(points.Count - 1);
-                currentPoint = new Vector2Int(Mathf.RoundToInt(points[points.Count - 1].x - transform.position.x - 0.5f), Mathf.RoundToInt(points[points.Count - 1].y - transform.position.y - 0.5f));
-                if (currentPoint == FindStart())
-                {
-                    return null;
-                }
-                continue;
-            }
-
-            float currentDis = 0;
-            float currentLowestWeight = Mathf.Infinity;
-            Node currentNode = pointsInArea[0];
-
-            foreach (var item in pointsInArea)
-            {
-                float cost = item.weight;
-                float dis = Vector2Int.Distance(new Vector2Int(Mathf.RoundToInt(item.transform.localPosition.x), Mathf.RoundToInt(item.transform.localPosition.y)), endPoint);
-                if ((dis + cost) < currentLowestWeight)
-                {
-                    currentLowestWeight = dis + cost;
-                    currentNode = item;
-                    currentDis = dis;
-                }
-            }
-
-            points.Add(currentNode.transform.position + new Vector3(0.5f, 0.5f));
-            currentPoint = new Vector2Int(Mathf.RoundToInt(currentNode.transform.localPosition.x), Mathf.RoundToInt(currentNode.transform.localPosition.y));
-            currentNode.path = true;
-
-            pathLength += currentDis;
-
-            if (currentNode.nodeType == Node.Type.end)
-            {
-                break;
+                neighbors.Add(grid[x, y]);
             }
         }
-        return points.ToArray();
+
+        return neighbors;
     }
 
     private Vector2Int FindStart()
@@ -172,7 +220,7 @@ public class PathGrid : MonoBehaviour
         {
             if (item.nodeType == Node.Type.start)
             {
-                return new Vector2Int(Mathf.RoundToInt(item.transform.localPosition.x), Mathf.RoundToInt(item.transform.localPosition.y));
+                return item.pos;
             }
         }
 
@@ -185,13 +233,12 @@ public class PathGrid : MonoBehaviour
         {
             if (item.nodeType == Node.Type.end)
             {
-                return new Vector2Int(Mathf.RoundToInt(item.transform.localPosition.x), Mathf.RoundToInt(item.transform.localPosition.y));
+                return item.pos;
             }
         }
 
         return new Vector2Int();
     }
-
     private void OnDrawGizmos()
     {
         Gizmos.color = Color.green;

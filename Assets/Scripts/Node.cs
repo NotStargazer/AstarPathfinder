@@ -4,14 +4,21 @@ using UnityEngine.Assertions;
 public class Node : MonoBehaviour
 {
     private SpriteRenderer renderer;
-    public int weight;
-    public bool path;
+    public int gCost { get; set; }
+    public int hCost { get; set; }
+    public int fCost { get => hCost + gCost; }
+
+    public int xPos { private get; set; }
+    public int yPos { private get; set; }
+    public Vector2Int pos { get => new Vector2Int(xPos, yPos); }
+
+    public Node parent;
 
     private void Start()
     {
         renderer = GetComponent<SpriteRenderer>();
         Assert.IsNotNull(renderer, "Missing SpriteRender component");
-        UpdateNode();
+        UpdateType();
     }
 
     public enum Type
@@ -28,35 +35,62 @@ public class Node : MonoBehaviour
     {
         if (Input.GetKeyDown(KeyCode.Mouse0))
         {
-            nodeType = nodeType.Next();
-            UpdateNode();
+            if (nodeType == Type.path)
+            {
+                nodeType = Type.blockage;
+            }
+            else
+            {
+                nodeType = Type.path;
+            }
+            UpdateType();
         }
         if (Input.GetKeyDown(KeyCode.Mouse1))
         {
-            nodeType = nodeType.Previous();
-            UpdateNode();
+            if (nodeType == Type.start)
+            {
+                nodeType = Type.end;
+            }
+            else
+            {
+                nodeType = Type.start;
+            }
+            UpdateType();
+            UpdateType();
         }
     }
 
-    private void UpdateNode()
+    private void OnMouseEnter()
+    {
+        if (Input.GetKey(KeyCode.Mouse0))
+        {
+            if (nodeType == Type.path)
+            {
+                nodeType = Type.blockage;
+            }
+            else
+            {
+                nodeType = Type.path;
+            }
+            UpdateType();
+        }
+    }
+
+    private void UpdateType()
     {
         switch (nodeType)
         {
             case Type.path:
                 renderer.color = Color.gray;
-                weight = 1;
                 break;
             case Type.blockage:
                 renderer.color = Color.black;
-                weight = 100;
                 break;
             case Type.start:
                 renderer.color = Color.green;
-                weight = 100;
                 break;
             case Type.end:
                 renderer.color = Color.red;
-                weight = 0;
                 break;
         }
         transform.parent.GetComponent<PathGrid>().UpdateFlags();
